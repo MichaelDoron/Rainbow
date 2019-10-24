@@ -1,24 +1,21 @@
 import os
-import plotly
-from plotly.graph_objs import Scatter
-from plotly.graph_objs.scatter import Line
 import torch
-
+import copy
 from env import Env
 
-
+import numpy as np
 # Globals
 Ts, rewards, Qs, best_avg_reward = [], [], [], -1e10
 
-
 # Test DQN
-def test(args, T, dqn, val_mem, evaluate=False):
+def test(args, T, dqn, val_mem, specific_title = '', evaluate=False):
   global Ts, rewards, Qs, best_avg_reward
   env = Env(args)
   env.eval()
   Ts.append(T)
   T_rewards, T_Qs = [], []
-
+  
+  
   # Test performance over several episodes
   done = True
   for _ in range(args.evaluation_episodes):
@@ -47,34 +44,16 @@ def test(args, T, dqn, val_mem, evaluate=False):
     rewards.append(T_rewards)
     Qs.append(T_Qs)
 
-    # Plot
-    _plot_line(Ts, rewards, 'Reward', path='results')
-    _plot_line(Ts, Qs, 'Q', path='results')
 
     # Save model parameters if improved
     if avg_reward > best_avg_reward:
       best_avg_reward = avg_reward
-      dqn.save('results')
+    if args.model != None:
+      dqn.save(args.base_folder, args.title, args)
 
+  np.save(args.base_folder + 'results/avg_reward_{}_{}_{}.npy'.format(specific_title, T, args.add_appendix), avg_reward)
+  if args.add_appendix:
+    np.save(args.base_folder + 'results/app_lin_{}_{}_{}.npy'.format(specific_title, T, args.add_appendix), dqn.online_net.app_lin.weight.data)
   # Return average reward and Q-value
   return avg_reward, avg_Q
 
-
-# Plots min, max and mean + standard deviation bars of a population over time
-def _plot_line(xs, ys_population, title, path=''):
-  max_colour, mean_colour, std_colour, transparent = 'rgb(0, 132, 180)', 'rgb(0, 172, 237)', 'rgba(29, 202, 255, 0.2)', 'rgba(0, 0, 0, 0)'
-
-  ys = torch.tensor(ys_population, dtype=torch.float32)
-  ys_min, ys_max, ys_mean, ys_std = ys.min(1)[0].squeeze(), ys.max(1)[0].squeeze(), ys.mean(1).squeeze(), ys.std(1).squeeze()
-  ys_upper, ys_lower = ys_mean + ys_std, ys_mean - ys_std
-
-  trace_max = Scatter(x=xs, y=ys_max.numpy(), line=Line(color=max_colour, dash='dash'), name='Max')
-  trace_upper = Scatter(x=xs, y=ys_upper.numpy(), line=Line(color=transparent), name='+1 Std. Dev.', showlegend=False)
-  trace_mean = Scatter(x=xs, y=ys_mean.numpy(), fill='tonexty', fillcolor=std_colour, line=Line(color=mean_colour), name='Mean')
-  trace_lower = Scatter(x=xs, y=ys_lower.numpy(), fill='tonexty', fillcolor=std_colour, line=Line(color=transparent), name='-1 Std. Dev.', showlegend=False)
-  trace_min = Scatter(x=xs, y=ys_min.numpy(), line=Line(color=max_colour, dash='dash'), name='Min')
-
-  plotly.offline.plot({
-    'data': [trace_upper, trace_mean, trace_lower, trace_min, trace_max],
-    'layout': dict(title=title, xaxis={'title': 'Step'}, yaxis={'title': title})
-  }, filename=os.path.join(path, title + '.html'), auto_open=False)
